@@ -1,41 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:newskilloapp/pages/skill_notifier.dart';
-
+import 'package:newskilloapp/pages/skill_details_page.dart';
+import 'package:newskilloapp/features/content/content.dart';
 
 class SavedSkillsPage extends StatefulWidget {
   final SkillNotifier skillNotifier;
 
-  final List<String> skillsList = [
-    'Improve Communication',
-    'Facial Expressions',
-    'Public Speaking',
-    'Time Management',
-  ];
-
-  double calculateProgress(int completed, int total) {
-  if (total == 0) return 0;
-  return completed / total;
-}
-
-  SavedSkillsPage(
-    {
+  const SavedSkillsPage({
+    super.key,
     required this.skillNotifier,
-    }
-  );
-  
+  });
 
   @override
-  _SavedSkillsPageState createState() => _SavedSkillsPageState(); 
-
+  State<SavedSkillsPage> createState() => _SavedSkillsPageState();
 }
 
-class _SavedSkillsPageState extends State<SavedSkillsPage>{
-
+class _SavedSkillsPageState extends State<SavedSkillsPage> {
   final TextEditingController _searchController = TextEditingController();
   String searchQuery = '';
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final contentService = ContentService();
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 210,
@@ -44,13 +37,13 @@ class _SavedSkillsPageState extends State<SavedSkillsPage>{
         flexibleSpace: Stack(
           children: [
             Container(
-              decoration: BoxDecoration(
-                image: DecorationImage(image: AssetImage('lib/images/background.png'),
-                fit: BoxFit.cover,
+              decoration: const BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage('lib/images/background.png'),
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
-
             Positioned(
               top: 100,
               left: 0,
@@ -66,12 +59,10 @@ class _SavedSkillsPageState extends State<SavedSkillsPage>{
                         color: Colors.black.withOpacity(0.2),
                         spreadRadius: 2,
                         blurRadius: 3,
-                        offset: Offset(0.5, 1),
+                        offset: const Offset(0.5, 1),
                       )
-                    ]
+                    ],
                   ),
-
-
                   child: TextField(
                     controller: _searchController,
                     textAlign: TextAlign.center,
@@ -80,124 +71,153 @@ class _SavedSkillsPageState extends State<SavedSkillsPage>{
                         searchQuery = value.toLowerCase();
                       });
                     },
-
                     decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white,
-                    hintText: 'Search',
-                    prefixIcon: Icon(Icons.search),
-                    contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 45),
-                    border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: BorderSide.none,
-                ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      hintText: 'Search',
+                      prefixIcon: const Icon(Icons.search),
+                      contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 45),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-            ),
-
-            Positioned(
+            const Positioned(
               bottom: 10,
               left: 16,
               child: Text(
-              'Previous Skills',
-              style: TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w500,
-          ),
+                'Previous Skills',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-    ],
-  ),
-),
 
-      body: ValueListenableBuilder(
-        valueListenable: widget.skillNotifier,
-        builder: (context, skills, child) {
-          
-          final filteredSkills = widget.skillsList.where((skill){
-              return skill.toLowerCase().contains(searchQuery);
+      body: StreamBuilder<List<Skill>>(
+        stream: contentService.watchSkills(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text("Error: ${snapshot.error}"));
+          }
+
+          final skills = snapshot.data ?? [];
+
+          final filteredSkills = skills.where((s) {
+            return s.title.toLowerCase().contains(searchQuery);
           }).toList();
-            
+
+          if (filteredSkills.isEmpty) {
+            return const Center(child: Text("No skills found"));
+          }
+
           return Container(
             color: Colors.white,
             child: ListView.builder(
               itemCount: filteredSkills.length,
               itemBuilder: (context, index) {
-                final skill = filteredSkills[index];
+                final s = filteredSkills[index];
+                final isSaved = widget.skillNotifier.value.contains(s.title);
+
                 return Card(
                   elevation: 0.7,
                   color: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadiusGeometry.circular(10),
-                    side: BorderSide(
+                    borderRadius: BorderRadius.circular(10),
+                    side: const BorderSide(
                       color: Color.fromARGB(255, 71, 172, 200),
                       width: 1,
-                    )
+                    ),
                   ),
-                  child: Container(
-                    height: 150,
-                    padding: EdgeInsets.all(10),
-                    child: Row(
-                      children: [
-                        if (index% 2 == 0)
-                        Image.asset('lib/images/man.png',
-                        width: 155,
-                        ),
-                        SizedBox(width: 10),
-                        Expanded(child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              skill,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 5),
-                            Text(
-                              'Practice and improve this skill',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.black,
-                                fontWeight: FontWeight.w300,
-                              ),
-                            )
-                          ],
-                        ),
-                        ),
-                        SizedBox(width: 10),
-                        if (index% 2 != 0)
-                        Image.asset('lib/images/man.png',
-                        width: 155,
-                        ),
-            
-                        Center(
-                          child: SizedBox(width: 30,
-                            child: IconButton(
-                              icon: Icon(
-                              widget.skillNotifier.value.contains(skill)
-                            ? Icons.bookmark : Icons.bookmark_border,  
-                            ),
-                            onPressed: (){
-                              if (widget.skillNotifier.value.contains(skill)){
-                              widget.skillNotifier.removeSkill(skill);
-                            } else {
-                              widget.skillNotifier.addSkill(skill);
-                            }
-                            },
-                            style: IconButton.styleFrom(
-                              splashFactory: NoSplash.splashFactory,
-                            ),
-                            ),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SkillDetailsPage(
+                            skillId: s.id,
+                            skillTitle: s.title,
                           ),
                         ),
-                      ],
+                      );
+                    },
+                    child: Container(
+                      height: 150,
+                      padding: const EdgeInsets.all(10),
+                      child: Row(
+                        children: [
+                          if (index % 2 == 0)
+                            Image.asset('lib/images/man.png', width: 155),
+
+                          const SizedBox(width: 10),
+
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  s.title,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  s.description.isNotEmpty
+                                      ? s.description
+                                      : 'Practice and improve this skill',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.w300,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          if (index % 2 != 0)
+                            Image.asset('lib/images/man.png', width: 155),
+
+                          SizedBox(
+                            width: 30,
+                            child: IconButton(
+                              icon: Icon(
+                                isSaved
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
+                              ),
+                              onPressed: () {
+                                if (isSaved) {
+                                  widget.skillNotifier.removeSkill(s.title);
+                                } else {
+                                  widget.skillNotifier.addSkill(s.title);
+                                }
+                              },
+                              style: IconButton.styleFrom(
+                                splashFactory: NoSplash.splashFactory,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -209,4 +229,3 @@ class _SavedSkillsPageState extends State<SavedSkillsPage>{
     );
   }
 }
-                      
