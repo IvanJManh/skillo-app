@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-//import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'package:newskilloapp/pages/sign_in_page.dart';
 import 'package:newskilloapp/pages/home_page.dart';
 import 'package:newskilloapp/pages/skill_notifier.dart';
@@ -11,43 +13,132 @@ class SignUpPage extends StatefulWidget {
   State<SignUpPage> createState() => _SignUpPageState();
 }
 
-final _nameController = TextEditingController();
-
-class _SignUpPageState extends State<SignUpPage>{
-  //final FirebaseAuth _auth = FirebaseAuth.instance;
+class _SignUpPageState extends State<SignUpPage> {
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _emailController =TextEditingController();
-  String? _errorText;
-  SkillNotifier skillNotifier = SkillNotifier();
 
-  void _checkPassword(){
-    if (_passwordController.text != _confirmPasswordController.text){
-      setState(() {
-        _errorText = "Passwords do not match";
-      });
+  final SkillNotifier _skillNotifier = SkillNotifier();
+
+  String? _errorText;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  void _checkPasswordMatch() {
+    final pass = _passwordController.text.trim();
+    final confirm = _confirmPasswordController.text.trim();
+
+    if (pass.isEmpty || confirm.isEmpty) {
+      setState(() => _errorText = null);
+      return;
     }
-    else{
-      setState(() {
-        _errorText = null;
-      });
+
+    if (pass != confirm) {
+      setState(() => _errorText = "Passwords do not match");
+    } else {
+      setState(() => _errorText = null);
     }
   }
 
-  /*Future<void> _signUp() async{
-    try{
-      await _auth.createUserWithEmailAndPassword(
-        email: _emailController.text, 
-        password: _passwordController.text);
+  bool _validate() {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final pass = _passwordController.text.trim();
+    final confirm = _confirmPasswordController.text.trim();
 
-        Navigator.pushReplacement(
-          context, MaterialPageRoute(builder: (context) => HomePage()));
-
-    } on FirebaseAuthException catch (e){
-      print(e.message);
+    if (name.isEmpty || email.isEmpty || pass.isEmpty || confirm.isEmpty) {
+      setState(() => _errorText = "All fields are required");
+      return false;
     }
-  }*/
-  
+
+    if (pass.length < 6) {
+      setState(() => _errorText = "Password must be at least 6 characters");
+      return false;
+    }
+
+    if (pass != confirm) {
+      setState(() => _errorText = "Passwords do not match");
+      return false;
+    }
+
+    setState(() => _errorText = null);
+    return true;
+  }
+
+  Future<void> _signUp() async {
+    if (!_validate()) return;
+
+    setState(() => _loading = true);
+
+    try {
+      // 1) Create user in Firebase Auth
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      final user = cred.user;
+      if (user == null) {
+        throw FirebaseAuthException(code: "user-null");
+      }
+
+      // 2) Save display name to Auth profile
+      await user.updateDisplayName(_nameController.text.trim());
+      await user.reload();
+
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+      final uid = refreshedUser?.uid;
+
+      if (uid == null) {
+        throw FirebaseAuthException(code: "missing-uid");
+      }
+
+      // 3) Save user profile to Firestore (users/{uid})
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'name': _nameController.text.trim(),
+        'email': refreshedUser?.email ?? _emailController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // 4) Go Home
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomePage(
+            skillNotifier: _skillNotifier,
+            userName: refreshedUser?.displayName ?? _nameController.text.trim(),
+            userEmail: refreshedUser?.email ?? _emailController.text.trim(),
+          ),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      // Common: email-already-in-use, weak-password, invalid-email
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Sign up failed: ${e.code}")),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Sign up failed: $e")),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,10 +151,9 @@ class _SignUpPageState extends State<SignUpPage>{
             image: DecorationImage(
               image: AssetImage('lib/images/background.png'),
               fit: BoxFit.cover,
-              )
+            ),
           ),
-
-          child: Padding(
+          child: const Padding(
             padding: EdgeInsets.all(12.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,59 +164,56 @@ class _SignUpPageState extends State<SignUpPage>{
                   style: TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.bold,
-                    color: Color.fromARGB(255, 255, 255, 255),
+                    color: Colors.white,
                   ),
                 ),
-
-                SizedBox(height: 0,),
+                SizedBox(height: 0),
                 Text(
                   'Sign up now and learn a new skill every day.',
-                  style: TextStyle(
-                    color: Color.fromARGB(255, 255, 255, 255),
-                    fontSize: 13.5,
-                  ),
+                  style: TextStyle(color: Colors.white, fontSize: 13.5),
                 ),
               ],
-
-            )
-            )
-
-
+            ),
+          ),
         ),
       ),
-
-        body: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: SingleChildScrollView(
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 10),
+
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
                   labelText: 'Enter your name',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                  )
+                  ),
                 ),
               ),
 
               const SizedBox(height: 10),
+
               TextField(
                 controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   labelText: 'Enter your email',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                  )
+                  ),
                 ),
               ),
 
-              const SizedBox(height: 10,),
+              const SizedBox(height: 10),
+
               TextField(
                 obscureText: true,
                 controller: _passwordController,
+                onChanged: (_) => _checkPasswordMatch(),
                 decoration: InputDecoration(
                   labelText: 'Enter your password',
                   border: OutlineInputBorder(
@@ -135,88 +222,87 @@ class _SignUpPageState extends State<SignUpPage>{
                 ),
               ),
 
-              const SizedBox(height: 10,),
+              const SizedBox(height: 10),
+
               TextField(
                 obscureText: true,
-                onChanged: (value) => _checkPassword(),
                 controller: _confirmPasswordController,
+                onChanged: (_) => _checkPasswordMatch(),
                 decoration: InputDecoration(
                   labelText: 'Confirm your password',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  errorText: _errorText,
                 ),
               ),
-            
+
+              if (_errorText != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    _errorText!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+
               const SizedBox(height: 20),
+
               SizedBox(
                 height: 45,
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _errorText != null ? null : () async{
-
-                  Navigator.pushReplacement(
-                    context, 
-                    MaterialPageRoute(
-                      builder: (context) => HomePage(
-                        skillNotifier: skillNotifier,
-                        userName: _nameController.text,
-                        userEmail: _emailController.text),
-                    ),
-                    );
-                    /*if (_passwordController.text == _confirmPasswordController.text){
-                      print('Signed up');
-                    }else{
-                      print('password doesnt match');
-                    }*/
-                  }, 
+                  onPressed: (_errorText != null || _loading) ? null : _signUp,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(255, 71, 172, 200),
+                    backgroundColor: const Color.fromARGB(255, 71, 172, 200),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadiusGeometry.circular(30),
-                    )
-                  ), child: Text(
-                    'Sign up',
-                    style: TextStyle(
-                      color: Color.fromARGB(255, 255, 255, 255),
-                      fontSize: 16,
+                      borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  ),
+                  child: _loading
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Sign up',
+                          style: TextStyle(color: Colors.white, fontSize: 16),
+                        ),
+                ),
               ),
 
               const SizedBox(height: 90),
+
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text("Do have an account? "),
                     GestureDetector(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const SignInPage()),
-                        );
-                      },
+                      onTap: _loading
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SignInPage(),
+                                ),
+                              );
+                            },
                       child: const Text(
                         'Sign In',
                         style: TextStyle(
                           color: Color.fromARGB(255, 0, 130, 167),
                         ),
-                      
                       ),
                     ),
                   ],
                 ),
               ),
-
             ],
           ),
-
         ),
-    ),
+      ),
     );
   }
 }
